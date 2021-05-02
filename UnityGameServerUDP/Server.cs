@@ -37,7 +37,8 @@ namespace UnityGameServerUDP
         private List<int> takenPositions = new List<int>();
         public void Run(int maxPlayerCount, int minPlayerCount, int spawnPosCount, int minutesAfterStart, double resetTimeDisconecctedList, int port)
         {
-
+            var externalip = new WebClient().DownloadString("https://ipv4.icanhazip.com/").TrimEnd();
+            Console.WriteLine("ip address: " + externalip + ":" + port.ToString());
             this.minutesAfterStart = minutesAfterStart;
             this.spawnPosCount = spawnPosCount;
             serverWorks = true;
