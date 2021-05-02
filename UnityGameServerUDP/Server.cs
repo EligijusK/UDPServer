@@ -5,7 +5,8 @@ using System.Collections.Generic;
 using System.Text;
 using System.Net.Sockets;
 using System.Net;
-
+using System.Threading;
+using System.Diagnostics;
 namespace UnityGameServerUDP
 {
     class Server
@@ -26,11 +27,22 @@ namespace UnityGameServerUDP
         public List<string> disconnectedFromOthersCount { get; private set; }
         private static object sendLock = new object();
         private Attack attackHandler;
-
-        public void Run(int maxPlayerCount, double resetTimeDisconecctedList, int port)
+        private static int minPlayersToStart;
+        private int spawnPosCount;
+        private bool serverWorks = false;
+        private bool startTimerCheck = false;
+        private int minutesAfterStart;
+        private Stopwatch startTimer;
+        private Thread threadStartTimer;
+        private List<int> takenPositions = new List<int>();
+        public void Run(int maxPlayerCount, int minPlayerCount, int spawnPosCount, int minutesAfterStart, double resetTimeDisconecctedList, int port)
         {
-          
+
+            this.minutesAfterStart = minutesAfterStart;
+            this.spawnPosCount = spawnPosCount;
+            serverWorks = true;
             MaxPlayers = maxPlayerCount;
+            minPlayersToStart = minPlayerCount;
             Port = port;
             listener = new UdpClient(port);
             playerArray = new Player[maxPlayerCount];
@@ -41,12 +53,27 @@ namespace UnityGameServerUDP
             disconnectedListResetTime = resetTimeDisconecctedList;
             otherConnectionCount = new List<string>();
             disconnectedFromOthersCount = new List<string>();
+            startTimer = new Stopwatch();
             UserSetup();
             attackHandler = new Attack(this, playerArray);
             sendLock = new object();
+
+            threadStartTimer = new Thread(() => StartTimer());
+            threadStartTimer.Start();
+
             MessageHandler(); // this always should be last
 
+            
+
             //listener.Close();
+
+        }
+
+        public void StopServer()
+        {
+
+            serverWorks = false;
+            listener.Close();
 
         }
 
@@ -56,7 +83,7 @@ namespace UnityGameServerUDP
             Byte[] receive_byte_array;
             try
             {
-                while (true)
+                while (serverWorks)
                 {
                     
                     //Console.WriteLine("Waiting for broadcast");
@@ -107,7 +134,7 @@ namespace UnityGameServerUDP
                                 {
 
                                     int playerCount = (int)BitFunctions.CountBits(Server.MaxPlayers);
-                                    packetLenBits = BitFunctions.BitsReverse(BitFunctions.Range((int)(1 + commandLen), playerCount, receivedMessage));
+                                    packetLenBits = BitFunctions.BitsReverse(BitFunctions.Range((int)(packetTypeCount + commandLen), playerCount, receivedMessage));
                                     int res = (int)BitFunctions.BitArrayToUInt(packetLenBits);
                                     commands.AddData(res);
                                     commands.AddUserForConnection(user);
@@ -130,7 +157,7 @@ namespace UnityGameServerUDP
                                 {
 
                                     int playerCount = (int)BitFunctions.CountBits(Server.MaxPlayers);
-                                    packetLenBits = BitFunctions.BitsReverse(BitFunctions.Range((int)(1 + commandLen), playerCount, receivedMessage));
+                                    packetLenBits = BitFunctions.BitsReverse(BitFunctions.Range((int)(packetTypeCount + commandLen), playerCount, receivedMessage));
                                     int res = (int)BitFunctions.BitArrayToUInt(packetLenBits);
                                     commands.AddData(res);
                                     commands.AddUserForConnection(user);
@@ -149,21 +176,30 @@ namespace UnityGameServerUDP
                         //Console.WriteLine("message To Server");
 
                     }
-                    else if (packetType == (int)ServerCommands.PacketType.UserServer)
-                    { 
-                        
-                    }
                     else
                     {
-                        if (connectedIP.Contains(user.ToString()))
+                        Packet packet = new Packet(receive_byte_array);
+                        if (packet.GetReceivedSenderId() > 0 && packet.GetReceivedSenderId() < playerArray.Length)
                         {
-                            BroadcastMessageAll(receive_byte_array);
-                            //Console.WriteLine(receive_byte_array);
+                            if (packetType == (int)ServerCommands.PacketType.UserServer)
+                            {
+
+                                attackHandler.AttackMessage(packet);
+                            }
+                            else
+                            {
+                                if (packet.GetReceivedSenderId() != 0)
+                                {
+                                   
+                                    if (connectedIP.Contains(user.ToString()) && !playerArray[packet.GetReceivedSenderId() - 1].PlayerIsDead())
+                                    {
+                                        BroadcastMessageAll(receive_byte_array);
+                                        //Console.WriteLine(receive_byte_array);
+                                    }
+                                }
+
+                            }
                         }
-
-
-
-
                     }
 
                     if (timer > disconnectedListResetTime)
@@ -188,10 +224,12 @@ namespace UnityGameServerUDP
 
         public void MessagesForOtherReacivingConnection(byte[] message)
         {
-            byte[] messageCopy = message;
+            
+            byte[] messageCopy = new byte[message.Length];
+            Array.Copy(message, messageCopy, message.Length);
             DateTime time = DateTime.Now;
             double sec = 0;
-            while (otherConnectionCount.Count <= connectedIP.Count)
+            while (serverWorks && otherConnectionCount.Count <= connectedIP.Count)
             {
                 sec = (DateTime.Now - time).TotalMilliseconds;
                 if (sec > 20)
@@ -207,10 +245,12 @@ namespace UnityGameServerUDP
 
         public void MessagesForOtherReacivingDisconnection(byte[] message)
         {
-            byte[] messageCopy = message;
+
+            byte[] messageCopy = new byte[message.Length];
+            Array.Copy(message, messageCopy, message.Length);
             DateTime time = DateTime.Now;
             double sec = 0;
-            while (disconnectedFromOthersCount.Count <= connectedIP.Count)
+            while (serverWorks && disconnectedFromOthersCount.Count <= connectedIP.Count)
             {
                 sec = (DateTime.Now - time).TotalMilliseconds;
                 if (sec > 250)
@@ -225,12 +265,77 @@ namespace UnityGameServerUDP
         }
 
 
+        private void StartTimer()
+        {
+            ServerCommands commandsForThread = new ServerCommands(this);
+            long elapsedMilliseconds = 0;
+            while (serverWorks)
+            {
+                if (CheckMinConnected() && !startTimerCheck)
+                {
+                    startTimerCheck = true;
+                    elapsedMilliseconds = 0;
+                }
+                else if (startTimerCheck)
+                {
+                    int time = (minutesAfterStart * 60) - (int)(elapsedMilliseconds / 1000);
+                    if (time > -1)
+                    {
+                        
+                        Console.WriteLine(time);
+                        commandsForThread.AddData(time);
+                        byte[] send_buffer = commandsForThread.CommandPacket(ServerCommands.ServerCommand.Timer);
+                        BroadcastMutipleMessageAll(send_buffer, 1);
+                    }
+                    elapsedMilliseconds += 50;
+                    Thread.Sleep(50);
+
+                }
+                if (!CheckMinConnected() && startTimerCheck)
+                {
+                    elapsedMilliseconds = 0;
+                    startTimerCheck = false;
+                }
+            }
+        }
+
+
         public void UserSetup()
         {
             for (int i = 0; i < MaxPlayers; i ++)
             {
+                
                 playerArray[i] = new Player(i+1, this);
             }
+        }
+
+        public int GenerateRandomPos()
+        {
+            Random rand = new Random();
+            int position = rand.Next(0, spawnPosCount);
+            while (takenPositions.Contains(position))
+            {
+                position = rand.Next(0, spawnPosCount);
+            }
+            return position;
+        }
+
+        public void RemoveRandomPosFromTaken(int pos)
+        {
+            takenPositions.Remove(pos);
+        }
+
+        public bool PlayerWin()
+        {
+            int countAlive = 0;
+            foreach (Player player in playerArray)
+            {
+                if (!player.PlayerIsDead() && player.isConnected())
+                {
+                    countAlive++;
+                }
+            }
+            return countAlive == 1;
         }
 
         public static void UserConnects()
@@ -244,7 +349,7 @@ namespace UnityGameServerUDP
             {
                 for (int i = 0; i < MaxPlayers; i++)
                 {
-                    if (playerArray[i].isConnected() && playerArray[i].CheckUser(user))
+                    if (playerArray[i].CheckUser(user))
                     {
                         playerArray[i].ConectToServer(user, listener, commands);
                         break;
@@ -267,6 +372,20 @@ namespace UnityGameServerUDP
         public static Player[] GetConnected()
         {
             return playerArray;
+        }
+
+        public static bool CheckMinConnected()
+        {
+            int countConnected = 0;
+            foreach (Player player in playerArray)
+            {
+                if (player.isConnected())
+                {
+                    countConnected++;
+                }
+            }
+            return countConnected >= minPlayersToStart;
+
         }
 
         public static void UserDisconnect()
@@ -298,6 +417,24 @@ namespace UnityGameServerUDP
             }
         }
 
+        public static void ActionAfterThread(Action action, Thread thread)
+        {
+            while (thread.IsAlive)
+            { }
+            action();
+        }
+
+        public static void BroadcastMutipleMessageAll(byte[] message, int length, Thread thread)
+        {
+            while (thread.IsAlive)
+            { }
+            for (int messageCount = 0; messageCount < length; messageCount++)
+            {
+                BroadcastMessageAll(message);
+
+            }
+        }
+
         private static void BroadcastMessageAllButSender(byte[] message, int index)
         {
             for (int i = 0; i < MaxPlayers; i++)
@@ -306,6 +443,24 @@ namespace UnityGameServerUDP
                 {
                     listener.Send(message, message.Length, playerArray[i].endPoint);
                 }
+            }
+
+        }
+
+        public static void BroadcastMultipleMessageToReceiver(byte[] message, int count, int index)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                BroadcastMessageToSpecificReceiver(message, index);
+            }
+
+        }
+
+        private static void BroadcastMessageToSpecificReceiver(byte[] message, int index)
+        {
+            if (playerArray[index].isConnected())
+            {
+                listener.Send(message, message.Length, playerArray[index].endPoint);
             }
 
         }

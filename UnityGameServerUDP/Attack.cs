@@ -15,10 +15,10 @@ namespace UnityGameServerUDP
 
         private Dictionary<string, int> wepons = new Dictionary<string, int>();
 
-        private int firstPacketId = 0;
-        private int secondPacketId = 0;
+        private int firstPacketId = -1;
+        private int secondPacketId = -1;
 
-        private int requestTimeout = 40;
+        private int requestTimeout = 2000;
 
         private string filePath = "";
 
@@ -32,38 +32,58 @@ namespace UnityGameServerUDP
             wepons = new Dictionary<string, int>();
 
             filePath = Path.Combine(Environment.CurrentDirectory, "Weapons.json");
-            Console.WriteLine("lol");
             using (StreamReader file = File.OpenText(@filePath))
             {
                 string fileText = file.ReadToEnd();
                 wepons = JsonConvert.DeserializeObject<Dictionary<string, int>>(fileText);
             }
+
+            
         }
 
         public void AttackMessage(Packet packet)
         {
             int attackedId = packet.GetInt();
             int attackId = packet.GetInt();
-            if (!attackPackets.ContainsKey(attackId) && firstPacketId != packet.GetPackageIndex() && attackedId != packet.GetSenderId())
+
+            //Console.WriteLine("attackers id: " + packet.GetReceivedSenderId() + " attacked id: " + attackedId + " attackId: " + attackId);
+            //Console.WriteLine();
+
+            //Console.WriteLine("attack package");
+            if (!attackPackets.ContainsKey(attackId) && firstPacketId != packet.GetPackageIndex() && attackedId != packet.GetReceivedSenderId())
             {
                 attackPackets.Add(attackId, (packet, null));
                 firstPacketId = packet.GetPackageIndex();
+                Thread thred = new Thread(() => ThreadTimer(attackId));
+                thred.Start();
             }
-            else if (firstPacketId != packet.GetPackageIndex() && attackPackets[attackId].Item2 == null && secondPacketId != packet.GetPackageIndex())
+            else if (!attackPackets.ContainsKey(attackId) && secondPacketId != packet.GetPackageIndex() && attackedId == packet.GetReceivedSenderId())
+            {
+                attackPackets.Add(attackId, (null, packet));
+                secondPacketId = packet.GetPackageIndex();
+                Thread thred = new Thread(() => ThreadTimer(attackId));
+                thred.Start();
+            }
+            else if (attackPackets.ContainsKey(attackId) && attackPackets[attackId].Item2 == null && secondPacketId != packet.GetPackageIndex() && attackedId == packet.GetReceivedSenderId())
             { 
                 attackPackets[attackId] = (attackPackets[attackId].Item1, packet);
-                Thread thread = new Thread(() => HandleAttack(attackId));
-                thread.Name = attackedId.ToString();
                 secondPacketId = packet.GetPackageIndex();
             }
+            else if (attackPackets.ContainsKey(attackId) && firstPacketId != packet.GetPackageIndex() && attackedId != packet.GetReceivedSenderId() && attackPackets[attackId].Item1 == null)
+            {
+                attackPackets[attackId] = (packet, attackPackets[attackId].Item2);
+                secondPacketId = packet.GetPackageIndex();
+            }
+            
         }
 
-        public void ThradTimer(int attackId)
+        public void ThreadTimer(int attackId)
         {
+
             int timer = 0;
             while (timer < requestTimeout)
             {
-                if (attackPackets[attackId].Item1 != null && attackPackets[attackId].Item2 != null)
+                if (attackPackets.ContainsKey(attackId) && attackPackets[attackId].Item1 != null && attackPackets[attackId].Item2 != null)
                 {
                     HandleAttack(attackId);
                     break;
@@ -71,7 +91,7 @@ namespace UnityGameServerUDP
                 timer++;
                 Thread.Sleep(1);
             }
-            if (attackPackets[attackId].Item1 != null && attackPackets[attackId].Item2 != null)
+            if (attackPackets.ContainsKey(attackId) && attackPackets[attackId].Item1 != null && attackPackets[attackId].Item2 != null)
             {
                 HandleAttack(attackId);
 
@@ -79,6 +99,8 @@ namespace UnityGameServerUDP
             else 
             {
                 attackPackets.Remove(attackId);
+                firstPacketId = -1;
+                secondPacketId = -1;
             }
 
         }
@@ -89,26 +111,40 @@ namespace UnityGameServerUDP
             Packet playerTwo = attackPackets[attackId].Item2;
             int playerOneAttack = playerOne.GetInt();
             int playerTwoAttack = playerTwo.GetInt();
+            int healthPrefix = playerTwo.GetInt();
+            int deathPrefix = playerTwo.GetInt();
+            int winPrefix = playerTwo.GetInt();
+            //Console.WriteLine("Working attack");
+
             if (GetDamageAt(playerOneAttack) == GetDamageAt(playerTwoAttack))
             {
-                players[playerTwo.GetSenderId()].Attack(GetDamageAt(playerOneAttack));
+                
+                playerTwo.SetupHeader();
                 playerTwo.SetPacketType(Packet.PacketType.User);
-                playerTwo.AddFloat(GetDamageAt(playerTwoAttack));
+                playerTwo.AddInt(GetDamageAt(playerTwoAttack));
                 byte[] message = playerTwo.CreatePacket();
+                players[playerTwo.GetReceivedSenderId() - 1].Attack(GetDamageAt(playerOneAttack), playerTwo, healthPrefix, deathPrefix, playerOne.GetReceivedSenderId(), winPrefix);
                 Thread thread = new Thread(() => Server.BroadcastMutipleMessageAll(message, 200));
-
+                thread.Start();
+                attackPackets.Remove(attackId);
+                firstPacketId = -1;
+                secondPacketId = -1;
             }
             else
             {
-                players[playerTwo.GetSenderId()].Attack(GetDamageAt(playerTwoAttack));
+                
+                playerTwo.SetupHeader();
                 playerTwo.SetPacketType(Packet.PacketType.User);
-                playerTwo.AddFloat(GetDamageAt(playerTwoAttack));
+                playerTwo.AddInt(GetDamageAt(playerTwoAttack));
                 byte[] message = playerTwo.CreatePacket();
+                players[playerTwo.GetReceivedSenderId() - 1].Attack(GetDamageAt(playerTwoAttack), playerTwo, healthPrefix, deathPrefix, playerOne.GetReceivedSenderId(), winPrefix);
                 Thread thread = new Thread(() => Server.BroadcastMutipleMessageAll(message, 200));
-
+                thread.Start();
+                attackPackets.Remove(attackId);
+                firstPacketId = -1;
+                secondPacketId = -1;
             }
             
-
 
         }
 

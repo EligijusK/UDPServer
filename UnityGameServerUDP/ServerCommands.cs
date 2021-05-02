@@ -21,8 +21,10 @@ namespace UnityGameServerUDP
             DisconnectedFromOther = 4,
             Connected = 5,
             Full = 6,
-            ConnectOther = 7,
-            ConnectedOther = 8
+            Start = 7,
+            Timer = 8,
+            ConnectOther = 9,
+            ConnectedOther = 10
 
         }
 
@@ -39,6 +41,7 @@ namespace UnityGameServerUDP
 
         object data;
         object secData;
+        object thirdData;
         IPEndPoint user;
 
         Server server;
@@ -69,8 +72,12 @@ namespace UnityGameServerUDP
         public void ConnectedPacket() // function name by enum
         {
             int playerCount = (int)BitFunctions.CountBits(Server.MaxPlayers);
+            uint spawnId = (uint)secData;
+            int secdataCount = (int)BitFunctions.CountBits((int)spawnId);
             message = message + Convert.ToString((uint)Server.MaxPlayers, toBase: 2).PadLeft(7, '0');
             message = message + Convert.ToString((uint)data, toBase: 2).PadLeft(playerCount, '0');
+            message = message + Convert.ToString((uint)secdataCount, toBase: 2).PadLeft(7, '0');
+            message = message + Convert.ToString(spawnId, toBase: 2).PadLeft(secdataCount, '0');
         }
 
         public void ConnectOtherPacket()
@@ -80,19 +87,41 @@ namespace UnityGameServerUDP
             int playerLength = 0;
             uint currentIndex = (uint)secData;
             string tempMessage = "";
+            bool check = (bool)thirdData;
             for(int i = 0; i < allPlayers.Length; i++ )
             {
-                if(currentIndex != (i+1) && allPlayers[i].isConnected())
+                if (currentIndex != allPlayers[i].GetPlayerId() && allPlayers[i].isConnected() && check == false)
                 {
                     playerLength++;
                     tempMessage = tempMessage + Convert.ToString(allPlayers[i].GetPlayerId(), toBase: 2).PadLeft(playerCount, '0');
                     Console.WriteLine("other id: " + allPlayers[i].GetPlayerId());
+
+                }
+                else if (currentIndex == allPlayers[i].GetPlayerId() && allPlayers[i].isConnected() && check == true)
+                {
+                    playerLength++;
+                    tempMessage = tempMessage + Convert.ToString(allPlayers[i].GetPlayerId(), toBase: 2).PadLeft(playerCount, '0');
                 }
             }
+
             //(uint)playerLength
+            Console.WriteLine(playerLength);
             message = message + Convert.ToString(playerLength, toBase: 2).PadLeft(playerCount, '0');
             message = message + tempMessage;
 
+        }
+
+        public void StartPacket()
+        {
+            bool check = Server.CheckMinConnected();
+            int checkMess = check ? 1 : 0;
+            message = message + checkMess.ToString();
+        }
+
+        public void TimerPacket()
+        {
+            int seconds = (int)data;
+            message = message + Convert.ToString((uint)seconds, toBase: 2).PadLeft(12, '0');
         }
 
         public void FullPacket()
@@ -156,28 +185,23 @@ namespace UnityGameServerUDP
         {
             Player[] allPlayers = Server.GetConnected();
             int index = (int)data;
-            for (int i = 0; i < allPlayers.Length; i++)
+            if (index < (allPlayers.Length + 1) && allPlayers[index-1].isConnected() && allPlayers[index-1].GetPlayerId() == index)
             {
-                if (index < (allPlayers.Length + 1) && allPlayers[i].isConnected() && allPlayers[i].GetPlayerId() == index)
-                {
-                    string ip = allPlayers[i].endPoint.ToString();
-                    Server.RemoveIPFromList(ip);
-                    allPlayers[i].Disconnect();
-                    Server.UserDisconnect();
-                    Server.AddIPToDisconnectList(ip);
-                    server.ResetReceivedDisconnectionOtherList();
-                    server.AddOtherReceivedDisconnectedAddress(ip);
+                string ip = allPlayers[index-1].endPoint.ToString();
+                Server.RemoveIPFromList(ip);
+                allPlayers[index-1].Disconnect();
+                Server.UserDisconnect();
+                Server.AddIPToDisconnectList(ip);
+                server.ResetReceivedDisconnectionOtherList();
+                server.AddOtherReceivedDisconnectedAddress(ip);
 
-                    AddData((uint)allPlayers[i].GetPlayerId());
-                    byte[] send_buffer = CommandPacket(ServerCommand.DisconnectedFromOther);
-                    Thread threadOther = new Thread(() => server.MessagesForOtherReacivingDisconnection(send_buffer));
-                    threadOther.Start();
-
-                    break;
-                }
+                AddData((uint)allPlayers[index-1].GetPlayerId());
+                byte[] send_buffer = CommandPacket(ServerCommand.DisconnectedFromOther);
+                Thread threadOther = new Thread(() => server.MessagesForOtherReacivingDisconnection(send_buffer));
+                threadOther.Start();
+                
             }
-            
-            
+        
             
         }
 
@@ -211,6 +235,11 @@ namespace UnityGameServerUDP
         public void AddSecData(object data)
         {
             this.secData = data;
+        }
+
+        public void AddThirdData(object data)
+        {
+            this.thirdData = data;
         }
 
         public void AddUserForConnection(IPEndPoint user)

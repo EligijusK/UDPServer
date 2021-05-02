@@ -6,9 +6,8 @@ namespace UnityGameServerUDP
     {
         static void Main(string[] args)
         {
-            Console.WriteLine("Hello World!");
             Server server = new Server();
-            server.Run(10, 120, 5002);
+            server.Run(10, 2, 80, 1, 120, 5002);
         }
     }
 }

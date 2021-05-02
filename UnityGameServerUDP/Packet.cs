@@ -37,6 +37,7 @@ namespace UnityGameServerUDP
         // packet creation
         protected bool[] header = new bool[768];
         protected int headerIndex = 0;
+        protected int prefixStartIndex = 0;
         protected float messageLen = 0;
         protected int packetIndex = 0;
         protected bool increaseIndexManualy = false;
@@ -101,7 +102,9 @@ namespace UnityGameServerUDP
             packetLenBits = BitsReverseLen(receivedMessage, ref currentIndex, byteCountMaxPlayer);
             playerId = (int)BitArrayToUInt(packetLenBits);
 
-            packetLenBits = BitsReverseLen(receivedMessage, ref currentIndex, 3);
+            senderPlayerId = playerId;
+
+            packetLenBits = BitsReverseLen(receivedMessage, ref currentIndex, 5);
             lenPrefix = BitArrayToUInt(packetLenBits);
 
             packetLenBits = BitsReverseLen(receivedMessage, ref currentIndex, (int)lenPrefix);
@@ -355,7 +358,7 @@ namespace UnityGameServerUDP
             }
         }
 
-        public int GetSenderId()
+        public int GetReceivedSenderId()
         {
             return this.playerId;
         }
@@ -575,31 +578,45 @@ namespace UnityGameServerUDP
         public void SetupHeader()
         {
 
-            Array.Clear(resultsInBits, 0, resultsInBits.Length);
-            indexRefBits = 0;
-            AppendBitsFromBoolArrayToBool(ref indexRefBits, headerInBits.Length, headerInBits, ref resultsInBits);
-
             int byteCountMaxPlayer = Server.MaxPlayers;
             byteCountMaxPlayer = (int)CountBits(byteCountMaxPlayer); // bit count for player index
 
-            int bitLen = byteCountMaxPlayer + 3 + (int)lenPrefix;
+            int bitLen = byteCountMaxPlayer + 5 + (int)lenPrefix;
             headerInBits = new bool[bitLen];
 
             int headerIndex = 0;
 
-            bool[] bytes = ByteArray2BitArray(IntToBytes((int)playerId));
+            bool[] bytes = ByteArray2BitArray(IntToBytes((int)senderPlayerId));
 
             AppendBitsFromBoolArrayToBoolComplete(ref headerIndex, byteCountMaxPlayer, bytes, ref headerInBits);
 
             bytes = ByteArray2BitArray(IntToBytes((int)lenPrefix));
 
-            AppendBitsFromBoolArrayToBoolComplete(ref headerIndex, 3, bytes, ref headerInBits);
+            AppendBitsFromBoolArrayToBoolComplete(ref headerIndex, 5, bytes, ref headerInBits);
 
             int prefixIndex = this.prefixIndex;
 
             bytes = ByteArray2BitArray(IntToBytes(prefixIndex));
-
+            prefixStartIndex = headerIndex;
             AppendBitsFromBoolArrayToBoolComplete(ref headerIndex, (int)lenPrefix, bytes, ref headerInBits);
+
+            Array.Clear(resultsInBits, 0, resultsInBits.Length);
+            indexRefBits = 0;
+            AppendBitsFromBoolArrayToBool(ref indexRefBits, headerInBits.Length, headerInBits, ref resultsInBits);
+
+        }
+
+
+        public void ChangeReceivePrefix(int prefix)
+        {
+
+            headerIndex = prefixStartIndex;
+            bool[] bytes = ByteArray2BitArray(IntToBytes(prefix));
+            AppendBitsFromBoolArrayToBoolComplete(ref headerIndex, (int)lenPrefix, bytes, ref headerInBits);
+
+            Array.Clear(resultsInBits, 0, resultsInBits.Length);
+            indexRefBits = 0;
+            AppendBitsFromBoolArrayToBool(ref indexRefBits, headerInBits.Length, headerInBits, ref resultsInBits);
         }
 
         public byte[] CreatePacket()
@@ -831,7 +848,10 @@ namespace UnityGameServerUDP
             senderPlayerId = senderId;
         }
 
-
+        public int GetSenderId()
+        {
+            return senderPlayerId;
+        }
 
 
 
