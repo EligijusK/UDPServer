@@ -1,0 +1,13 @@
+F:\UnityGameServerUDP\UnityGameServerUDP\bin\Debug\netcoreapp3.1\UnityGameServerUDP.exe
+F:\UnityGameServerUDP\UnityGameServerUDP\bin\Debug\netcoreapp3.1\UnityGameServerUDP.deps.json
+F:\UnityGameServerUDP\UnityGameServerUDP\bin\Debug\netcoreapp3.1\UnityGameServerUDP.runtimeconfig.json
+F:\UnityGameServerUDP\UnityGameServerUDP\bin\Debug\netcoreapp3.1\UnityGameServerUDP.runtimeconfig.dev.json
+F:\UnityGameServerUDP\UnityGameServerUDP\bin\Debug\netcoreapp3.1\UnityGameServerUDP.dll
+F:\UnityGameServerUDP\UnityGameServerUDP\bin\Debug\netcoreapp3.1\UnityGameServerUDP.pdb
+F:\UnityGameServerUDP\UnityGameServerUDP\obj\Debug\netcoreapp3.1\UnityGameServerUDP.csprojAssemblyReference.cache
+F:\UnityGameServerUDP\UnityGameServerUDP\obj\Debug\netcoreapp3.1\UnityGameServerUDP.AssemblyInfoInputs.cache
+F:\UnityGameServerUDP\UnityGameServerUDP\obj\Debug\netcoreapp3.1\UnityGameServerUDP.AssemblyInfo.cs
+F:\UnityGameServerUDP\UnityGameServerUDP\obj\Debug\netcoreapp3.1\UnityGameServerUDP.csproj.CoreCompileInputs.cache
+F:\UnityGameServerUDP\UnityGameServerUDP\obj\Debug\netcoreapp3.1\UnityGameServerUDP.dll
+F:\UnityGameServerUDP\UnityGameServerUDP\obj\Debug\netcoreapp3.1\UnityGameServerUDP.pdb
+F:\UnityGameServerUDP\UnityGameServerUDP\obj\Debug\netcoreapp3.1\UnityGameServerUDP.genruntimeconfig.cache
